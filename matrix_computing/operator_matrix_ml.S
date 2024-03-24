@@ -6,73 +6,93 @@
 _ZNK6MatrixmlERKS_:
 pushl %ebp
 movl  %esp, %ebp
+pushl %ebx
 
 
-                                                                        #subl $16, %esp                          /* on fait de la place pour les variables c,r,i et elem */
-movl $0, -4(%ebp)                       /* c = 0 */
-movl $0, -8(%ebp)                       /* r = 0 */
-movl $0, -12(%ebp)                      /* i = 0 */
-movl 20(%ebp), %ebx                     /* on met matorder dans le registre ebx */
-
-loop:
-cmp -8(%ebp), %ebx                      /* on compare r et matorder */
-jbe end                                 /* on va à la fin si cest plus petit ou égale */
-
-loop2:
-cmp -4(%ebp), %ebx                      /* on compare c et matorder */
-jbe end                                 /* on va à la fin si cest plus petit ou égale */
-movl $0, -16(%ebp)                      /* elem = 0 */
-
-loop3:
-cmp -12(%ebp), %ebx                     /* on compare i et matorder */
-jbe inc1                                /* si i < matorder on va a inc1 */
-
-movl -12(%ebp), %edx                    /* edx = i */
-movl -8(%ebp), %ecx                     /* ecx = r */
-imul %ebx, %ecx                         /* ecx = r * matorder */
-add %edx, %ecx                          /* ecx = i + r * matorder */
-movl 8(%ebp), %eax                      /* eax = inmatdata1 */
-movl (%eax, %ecx, 4), %eax              /* eax = inmatdata1[i + r * matorder] */
-
-movl -4(%ebp), %ecx                     /* ecx = c */
-imul %ebx, %edx                         /* edx = i * matorder */
-add %edx, %ecx                          /* ecx = c + i * matorder */
-movl 12(%ebp), %edx                     /* edx = inmatdata2 */
-movl (%edx, %ecx, 4), %edx              /* edx = inmadata2[c + i * matorder] */
-
-imul %eax, %edx                         /* edx = inmadata2[c + i * matorder * inmatdata1[i + r * matorder] */
-add %edx, -16(%ebp)                     /* elem += edx */
-
-movl -8(%ebp), %ecx                     /* ecx = r */
-imul %ebx, %ecx                         /* ecx = r * matorder */
-add -4(%ebp), %ecx                      /* ecx = c + r * matorder */
-movl 16(%ebp), %eax                     /* eax = outmatdata */
-movl -16(%ebp), %edx                    /* edx = elem */
-movl %edx, (%eax, %ecx, 4)              /* outmatdata[c + r * matorder] = elem */
-
-jmp inc3
+#matrices 1 et 2 a multiplier
+    movl 12(%ebp), %eax    #matrice 1 dans eax
+    movl 16(%ebp), %ebx    #matrice 2 dans ebx
 
 
-inc1:
-incl -8(%ebp)                            /* on incremente r */
-movl $0, -4(%ebp)                        /* on reinitialise c */
-jmp loop                                 /* on recommence la premiere boucle */
+#verifier que les dimensions des matrices sont compatibles pour multiplication
+    movl 8(%eax), %ecx     #nb colonnes matrice 1 dans ecx
+    movl 4(%ebx), %edx     #nb lignes matrice 2 dans edx
 
-inc2:
-incl -4(%ebp)                            /* on incremente c */
-movl $0, -12(%ebp)                       /* on reinitialise i */
-jmp loop2                                /* on recommence la deuxieme boucle */
+    cmpl %ecx, %edx          #verification (m x n)(n x a)
+    jne not_multiplicatable  # si pas n=n, peut pas multiplier
 
-inc3:
-incl -12(%ebp)                           /* on incremente i */
-jmp loop3                                /* on recommence la troisieme loop */
+    movl 4(%eax), %ecx     #nb lignes matrice resultante
+    movl 8(%ebx), %edx     #nb colonnes matrice resultante
 
 
-#not_multiplicable:
-#movl -8(%ebp), %ecx
-#pushl %ecx
-#call notMultiplicableError
+#creation objet matrice resultante
+    pushl 8(%eax)               #nb colonnes
+    pushl 4(%eax)               #nb lignes
+    pushl 8(%ebp)               # x86-32 convention as passing the argument of newMatrix as first parameter
+    call _ZNK6MatrixmlEf        # call constructeur pour construire la matrice
+    addl $12, %esp
+
+
+#initialiser le nouveau objet matrice resultante
+    movl 8(%ebp), %ebx          # ebx = pointeur de l'objet
+    movl 12(%ebx), %edx         # elements
+    pushl %edx                  # nb colonnes
+    pushl  %ecx                 # nb lignes 
+
+
+
+#debut du loop de multiplication
+loop_i:
+    movl $0, %esi               # Initialisation de l'indice i à 0
+    movl %ebx, %edi             # Chargement de l'adresse de la matrice résultante dans edi
+
+loop_j:
+    movl $0, %edx               # Initialisation du résultat temporaire à 0
+    movl $0, %eax               # Initialisation de l'indice j à 0
+    
+    # Calcul de la valeur du nouvel élément de la matrice résultante
+    movl %esi, %ecx             # Chargement de l'indice i dans ecx
+    imull %edx, %ecx            # Multiplication scalaire par le résultat temporaire
+    addl %eax, %ecx             # Ajout de l'indice j
+    pushl %ecx                  # Sauvegarde de l'indice calculé pour findAddrElem
+    pushl %edx                  # Sauvegarde du résultat temporaire pour findAddrElem
+    pushl %esi                  # Sauvegarde de l'indice i pour findAddrElem
+    pushl %eax                  # Sauvegarde de l'indice j pour findAddrElem
+    pushl %ebx                  # Chargement de l'adresse de la matrice 1 pour findAddrElem
+    call findAddrElem           # Appel de findAddrElem pour obtenir l'adresse de l'élément correspondant de la matrice 1
+    addl $20, %esp              # Nettoyage de la pile après l'appel de fonction
+    movl (%eax), %ecx           # Chargement de la valeur de l'élément de la matrice 1
+    popl %eax                   # Restauration de l'indice j
+    popl %esi                   # Restauration de l'indice i
+    popl %edx                   # Restauration du résultat temporaire
+    imull (%esp), %ecx          # Multiplication scalaire avec l'élément de la matrice 1
+    addl %ecx, %edx             # Addition du résultat à la somme temporaire
+    addl $4, %esp               # Nettoyage de la pile après le calcul
+
+    # Boucle sur les colonnes de la matrice 1
+    addl $4, %eax               # Incrémentation de l'indice j
+    cmpl 12(%ebx), %eax         # Comparaison avec le nombre de colonnes de la matrice 1
+    jl loop_j                   # Si j < nombre de colonnes, continuer la boucle
+
+    # Stockage du résultat temporaire dans la matrice résultante
+    pushl %edx                  # Sauvegarde du résultat temporaire
+    pushl %esi                  # Sauvegarde de l'indice i
+    pushl %ebx                  # Chargement de l'adresse de la matrice résultante pour findAddrElem
+    call findAddrElem           # Appel de findAddrElem pour obtenir l'adresse de l'élément correspondant de la matrice résultante
+    addl $12, %esp              # Nettoyage de la pile après l'appel de fonction
+    movl %edx, (%eax)           # Stockage du résultat temporaire dans la matrice résultante
+
+    # Incrémentation de l'indice i
+    addl $1, %esi               # Incrémentation de l'indice i
+    cmpl 8(%ebx), %esi          # Comparaison avec le nombre de lignes de la matrice résultante
+    jl loop_i                   # Si i < nombre de lignes, continuer la boucle
+
+
+not_multiplicatable:
+    pushl %edx
+    call _ZN13YourClassName21notMultiplicatableErorEi
 
 end:
-        leave                            /* restore ebp and esp */
-        ret                              /* return to the caller */
+    popl %ebx                   # Restauration du registre ebx
+    leave                       # Nettoyage de la pile
+    ret                         # Retour de la fonction
